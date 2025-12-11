@@ -15,8 +15,8 @@ const INPUT_SAMPLE_RATE = 24000;  // gRPC server output rate
 const OUTPUT_SAMPLE_RATE = 8000; // Target rate for WebSocket client
 
 // Audio buffering configuration
-const AUDIO_BUFFER_DURATION = 4.0; // Buffer audio until ~4 seconds before sending
-const AUDIO_BUFFER_MIN_BYTES = OUTPUT_SAMPLE_RATE * 2 * AUDIO_BUFFER_DURATION; // 8000 samples/sec * 2 bytes/sample * 4 sec = 64000 bytes
+const AUDIO_BUFFER_DURATION = 6.0; // Buffer audio until ~6 seconds before sending
+const AUDIO_BUFFER_MIN_BYTES = OUTPUT_SAMPLE_RATE * 2 * AUDIO_BUFFER_DURATION; // 8000 samples/sec * 2 bytes/sample * 6 sec = 96000 bytes
 
 /**
  * Resample Int16 PCM audio from one sample rate to another using linear interpolation
