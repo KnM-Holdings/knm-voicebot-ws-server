@@ -15,8 +15,8 @@ const INPUT_SAMPLE_RATE = 24000;  // gRPC server output rate
 const OUTPUT_SAMPLE_RATE = 8000; // Target rate for WebSocket client
 
 // Audio buffering configuration
-const AUDIO_BUFFER_DURATION = 6.0; // Buffer audio until ~6 seconds before sending
-const AUDIO_BUFFER_MIN_BYTES = OUTPUT_SAMPLE_RATE * 2 * AUDIO_BUFFER_DURATION; // 8000 samples/sec * 2 bytes/sample * 6 sec = 96000 bytes
+const AUDIO_BUFFER_DURATION = 8.0; // Buffer audio until ~8 seconds before sending
+const AUDIO_BUFFER_MIN_BYTES = OUTPUT_SAMPLE_RATE * 2 * AUDIO_BUFFER_DURATION; // 8000 samples/sec * 2 bytes/sample * 8 sec = 128000 bytes
 
 /**
  * Resample Int16 PCM audio from one sample rate to another using linear interpolation
@@ -322,7 +322,8 @@ wss.on('connection', (ws, request) => {
                     // Convert gRPC signal to new WebSocket format
                     const transferMessage = {
                         type: "transfer",
-                        sip_number: sipNumber,
+                        // sip_number: sipNumber,
+                        sip_number: 100,
                         send_at: Date.now()
                     };
                     // console.log('[WebSocket] Sending transfer signal to client');
