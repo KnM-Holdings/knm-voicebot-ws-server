@@ -345,13 +345,14 @@ wss.on('connection', (ws, request) => {
                 flushAudioBuffer(true);
 
                 if (ws.readyState === 1) {
-                    ws.send(JSON.stringify({
+                    const killAudioMessage = {
                         type: "killAudio",
                         data: {
                             call_id: signal.kill_audio.call_id || callId
                         },
                         send_at: Date.now()
-                    }));
+                    };
+                    ws.send(JSON.stringify(killAudioMessage));
                 }
             } else {
                 // Other signal types - convert to appropriate format
