@@ -352,6 +352,8 @@ wss.on('connection', (ws, request) => {
                         },
                         send_at: Date.now()
                     };
+                    console.log('[WebSocket] Sending killAudio signal to client');
+
                     ws.send(JSON.stringify(killAudioMessage));
                 }
             } else {
