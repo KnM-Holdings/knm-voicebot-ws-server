@@ -23,6 +23,7 @@
     let audioWorkletNode;
     let analyser; // Force audio processing
     let isRecording = false;
+    let activeSources = []; // Track playing sources to allow stop/clear
 
     let nextStartTime = 0;
     // const PLAYBACK_SAMPLE_RATE = 24000; // REMOVED: Will use dynamic sample rate from server
@@ -112,6 +113,12 @@
               source.buffer = audioBuffer;
               source.connect(audioCtx.destination);
 
+              // Track source so we can stop it on start_kill_audio
+              activeSources.push(source);
+              source.onended = () => {
+                activeSources = activeSources.filter((s) => s !== source);
+              };
+
               // Schedule playback
               const currentTime = audioCtx.currentTime;
               if (nextStartTime < currentTime) {
@@ -126,6 +133,16 @@
             else if (message.type === 'transfer') {
               console.log('↪️  Transfer signal received, SIP:', message.sip_number);
               alert('Call is being transferred to SIP: ' + message.sip_number);
+            }
+            // Handle kill_audio
+            else if (message.type === 'killAudio') {
+              // Stop and clear current/queued playback, then accept new audio immediately
+              activeSources.forEach((s) => {
+                try { s.stop(0); } catch (_) {}
+              });
+              activeSources = [];
+              nextStartTime = audioCtx ? audioCtx.currentTime : 0;
+              console.log('⛔ killAudio received. Cleared playback queue. Call:', message?.data?.call_id || '');
             }
             // Handle disconnect message
             else if (message.type === 'disconnect') {

@@ -286,6 +286,17 @@ wss.on('connection', (ws, request) => {
                     console.error('[WebSocket] Error resampling audio:', err.message);
                 }
             }
+        } else if (serverResponse.text_output) {
+            // Forward text output to client if present
+            if (ws.readyState === 1) {
+                ws.send(JSON.stringify({
+                    type: "text",
+                    data: {
+                        textContent: serverResponse.text_output.text || ""
+                    },
+                    send_at: Date.now()
+                }));
+            }
         } else if (serverResponse.signal) {
             const signal = serverResponse.signal;
 
@@ -328,6 +339,19 @@ wss.on('connection', (ws, request) => {
                     };
                     // console.log('[WebSocket] Sending transfer signal to client');
                     ws.send(JSON.stringify(transferMessage));
+                }
+            } else if (signal.kill_audio) {
+                // Flush any buffered audio and notify client to clear playback
+                flushAudioBuffer(true);
+
+                if (ws.readyState === 1) {
+                    ws.send(JSON.stringify({
+                        type: "killAudio",
+                        data: {
+                            call_id: signal.kill_audio.call_id || callId
+                        },
+                        send_at: Date.now()
+                    }));
                 }
             } else {
                 // Other signal types - convert to appropriate format
