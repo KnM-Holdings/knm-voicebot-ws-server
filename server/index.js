@@ -177,6 +177,18 @@ wss.on('connection', (ws, request) => {
                 ws.send(JSON.stringify(responseMessage));
                 // console.log(`[WebSocket] Sent resampled audio chunk to client (24kHz -> 8kHz)`);
             }
+        } else if (serverResponse.text_output) {
+            const textChunk = serverResponse.text_output;
+            // console.log(`[gRPC] Received text output: ${textChunk.text}`);
+
+            if (ws.readyState === 1) { // OPEN
+                const responseMessage = {
+                    text_output: {
+                        text: textChunk.text
+                    }
+                };
+                ws.send(JSON.stringify(responseMessage));
+            }
         } else if (serverResponse.signal) {
             const signal = serverResponse.signal;
 
@@ -198,6 +210,19 @@ wss.on('connection', (ws, request) => {
                             ws.close(1000, 'Call ended by server');
                         }
                     }, 100);
+                }
+            } else if (signal.kill_audio) {
+                // console.log('[gRPC] Received kill_audio signal for:', signal.kill_audio.call_id);
+                if (ws.readyState === 1) {
+                    const killAudioMessage = {
+                        signal: {
+                            kill_audio: {
+                                call_id: signal.kill_audio.call_id
+                            }
+                        }
+                    };
+                    // console.log('[WebSocket] Sending kill_audio signal to client');
+                    ws.send(JSON.stringify(killAudioMessage));
                 }
             } else if (signal.transfer_call) {
                 // console.log('[gRPC] Received transfer_call signal');
