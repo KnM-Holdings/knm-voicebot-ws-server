@@ -14,4 +14,4 @@ http:
     app:
       loadBalancer:
         servers:
-          - url: http://host.docker.internal:8014
+          - url: http://nginx:80
