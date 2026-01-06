@@ -5,6 +5,18 @@
 </head>
 <body>
   <h1>WebSocket ↔ gRPC Voice Streaming</h1>
+  
+  <div style="margin-bottom: 15px; padding: 10px; border: 1px solid #ccc; border-radius: 5px; background-color: #f9f9f9;">
+    <legend style="font-weight: bold;">Connection Mode:</legend>
+    <div>
+      <input type="radio" id="mode-websocket" name="connection-mode" value="websocket" checked>
+      <label for="mode-websocket">WebSocket (Legacy)</label>
+      <br>
+      <input type="radio" id="mode-webrtc" name="connection-mode" value="webrtc">
+      <label for="mode-webrtc">WebRTC (New)</label>
+    </div>
+  </div>
+
   <button id="start">Start Mic</button>
   <button id="stop" disabled>Stop</button>
   <div id="status">Disconnected</div>
@@ -18,6 +30,7 @@
 
   <script>
     let ws = null;
+    let peerConnection = null;
     let audioCtx = null;
     let mediaStream;
     let audioWorkletNode;
@@ -26,6 +39,133 @@
 
     let nextStartTime = 0;
     const PLAYBACK_SAMPLE_RATE = 8000; // Resampled audio from server
+
+    function connectWebRTC() {
+        return new Promise((resolve, reject) => {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host;
+            const token = '3k659sdg98gkn3d9ghhg977';
+            const phone = '84987654321';
+            const callId = 'call_' + Date.now();
+            // Note the path change to /live-call/webrtc/
+            const wsUrl = `${protocol}//${host}/live-call/webrtc/${callId}/${phone}?token=${token}`;
+            console.log('Connecting to WebRTC Signaling Server:', wsUrl);
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = async () => {
+                console.log('✅ WebRTC Signaling Connected');
+                document.getElementById('status').textContent = 'Signaling Connected';
+
+                // Send start message to initialize the call (maps to InitialInfo in proto)
+                const startMessage = {
+                    type: 'start',
+                    type_call: 'inbound',
+                    url_audio_file: ''
+                };
+                ws.send(JSON.stringify(startMessage));
+                console.log('📤 Sent start message');
+
+                resolve();
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    // Handle different message types from WebRTC server
+                    switch(data.type) {
+                        case 'connected':
+                            console.log('✅ Connection acknowledged, ID:', data.connection_id);
+                            break;
+                            
+                        case 'ready':
+                            console.log('✅ Call initialized, Call ID:', data.call_id);
+                            document.getElementById('status').textContent = 'WebRTC Ready';
+                            break;
+                            
+                        case 'audio':
+                            // Handle audio from server (same as WebSocket mode)
+                            const base64Audio = data.audio_content;
+                            const binaryString = window.atob(base64Audio);
+                            const len = binaryString.length;
+                            const bytes = new Uint8Array(len);
+                            for (let i = 0; i < len; i++) {
+                                bytes[i] = binaryString.charCodeAt(i);
+                            }
+                            const audioData = bytes.buffer;
+
+                            console.log('✅ Received audio chunk from server:', audioData.byteLength, 'bytes');
+                            
+                            if (!audioCtx) return;
+
+                            // Convert Int16 PCM to Float32
+                            const int16Data = new Int16Array(audioData);
+                            const float32Data = new Float32Array(int16Data.length);
+                            
+                            for (let i = 0; i < int16Data.length; i++) {
+                                float32Data[i] = int16Data[i] / 32768.0;
+                            }
+
+                            // Create AudioBuffer
+                            const audioBuffer = audioCtx.createBuffer(1, float32Data.length, PLAYBACK_SAMPLE_RATE);
+                            audioBuffer.getChannelData(0).set(float32Data);
+
+                            // Create Source
+                            const source = audioCtx.createBufferSource();
+                            source.buffer = audioBuffer;
+                            source.connect(audioCtx.destination);
+
+                            // Schedule playback
+                            const currentTime = audioCtx.currentTime;
+                            if (nextStartTime < currentTime) {
+                                nextStartTime = currentTime + 0.05;
+                            }
+                            
+                            source.start(nextStartTime);
+                            nextStartTime += audioBuffer.duration;
+                            break;
+                            
+                        case 'text':
+                            console.log('📝 Received text:', data.text);
+                            break;
+                            
+                        case 'end_call':
+                            console.log('📴 Call ended by server, Call ID:', data.call_id);
+                            if (isRecording) {
+                                document.getElementById('stop').click();
+                            }
+                            break;
+                            
+                        case 'transfer_call':
+                            console.log('↪️  Call transfer signal received');
+                            alert('Call is being transferred to: ' + (data.staff_info?.map(s => s.name).join(', ') || 'available staff'));
+                            break;
+                            
+                        case 'kill_audio':
+                            console.log('🔇 Kill audio signal for Call ID:', data.call_id);
+                            break;
+                            
+                        case 'error':
+                            console.error('❌ Server error:', data.error);
+                            break;
+                            
+                        default:
+                            console.log('ℹ️ Unknown message type:', data.type);
+                    }
+                } catch (err) {
+                    console.error('Signaling message error:', err);
+                }
+            };
+            
+            ws.onclose = () => {
+                 console.log('❌ WebRTC Signaling Disconnected');
+                 document.getElementById('status').textContent = 'Disconnected';
+            };
+
+            ws.onerror = (e) => reject(e);
+        });
+    }
 
     function connectWebSocket() {
       return new Promise((resolve, reject) => {
@@ -177,7 +317,9 @@
 
     document.getElementById('start').onclick = async () => {
       try {
-        document.getElementById('status').textContent = 'Connecting...';
+        const mode = document.querySelector('input[name="connection-mode"]:checked').value;
+        const statusEl = document.getElementById('status');
+        statusEl.textContent = `Initializing (${mode})...`;
         
         // Initialize audio context
         if (!audioCtx) {
@@ -185,19 +327,12 @@
           console.log('🎵 AudioContext created. Sample rate:', audioCtx.sampleRate);
         }
         
-        // Connect WebSocket
-        await connectWebSocket();
-        
-        // Load AudioWorklet module
-        await audioCtx.audioWorklet.addModule('audio-processor.js');
-        
-        // Request microphone access with noise suppression and echo cancellation
-        // Browser automatically uses these if supported
+        // Request microphone access FIRST (needed for WebRTC too)
         const constraints = {
           audio: {
             echoCancellation: true,
             noiseSuppression: true,
-            autoGainControl: false // Disable auto gain to preserve volume accuracy
+            autoGainControl: false 
           }
         };
         
@@ -205,25 +340,22 @@
           mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
           const track = mediaStream.getAudioTracks()[0];
           console.log('🎤 Microphone connected:', track.label);
-          
-          // Check if audio processing is actually enabled
-          const settings = track.getSettings();
-          console.log('🔧 Audio Processing:', {
-            echoCancellation: settings.echoCancellation || false,
-            noiseSuppression: settings.noiseSuppression || false,
-            autoGainControl: settings.autoGainControl || false
-          });
         } catch (err) {
-          // If constraints fail, fallback to basic audio
           console.warn('⚠️  Audio constraints not supported, using basic mic:', err.message);
           mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          const track = mediaStream.getAudioTracks()[0];
-          console.log('🎤 Microphone connected (basic):', track.label);
+        }
+
+        // Connect based on mode
+        if (mode === 'websocket') {
+             await connectWebSocket();
+        } else {
+             await connectWebRTC();
         }
         
+        // Load AudioWorklet module
+        await audioCtx.audioWorklet.addModule('audio-processor.js');
         const source = audioCtx.createMediaStreamSource(mediaStream);
-        console.log('✅ MediaStreamSource created');
-        
+
         // Create AudioWorklet node
         audioWorkletNode = new AudioWorkletNode(audioCtx, 'audio-capture-processor');
         
@@ -231,6 +363,7 @@
         audioWorkletNode.port.onmessage = (e) => {
           if (!isRecording) return;
           
+          // Send audio for both modes (WebSocket and WebRTC use the same signaling channel)
           if (ws && ws.readyState === WebSocket.OPEN && e.data.audio && e.data.audio.byteLength > 0) {
             // Convert Float32 to Int16
             const float32Data = new Float32Array(e.data.audio);
@@ -249,7 +382,15 @@
             }
             const base64Audio = window.btoa(binary);
 
-            const message = {
+            // Message format depends on mode
+            const message = mode === 'webrtc' ? {
+                type: 'audio',
+                sample_rate: 8000,
+                sample_width: 2,
+                num_channels: 1,
+                duration: int16Data.length / 8000,
+                audio_content: base64Audio
+            } : {
                 play_audio: {
                     sample_rate: 8000,
                     sample_width: 2,
@@ -259,7 +400,7 @@
                 }
             };
 
-            console.log('📤 Sending audio chunk:', int16Data.byteLength, 'bytes');
+            // console.log('📤 Sending audio chunk:', int16Data.byteLength, 'bytes');
             ws.send(JSON.stringify(message));
           }
         };
@@ -276,7 +417,10 @@
 
         document.getElementById('start').disabled = true;
         document.getElementById('stop').disabled = false;
-        document.getElementById('status').textContent = 'Recording';
+        if (mode !== 'webrtc') { 
+            // WebRTC connect sets its own status
+            document.getElementById('status').textContent = 'Recording';
+        }
         console.log('🎤 Recording started');
         
       } catch (err) {
@@ -290,9 +434,13 @@
     document.getElementById('stop').onclick = () => {
       isRecording = false;
       
+      const mode = document.querySelector('input[name="connection-mode"]:checked').value;
+      
       // Send disconnect message to server before closing WebSocket
       if (ws && ws.readyState === WebSocket.OPEN) {
-        const disconnectMessage = {
+        const disconnectMessage = mode === 'webrtc' ? {
+          type: 'disconnect'
+        } : {
           disconnect: {}
         };
         console.log('📤 Sending disconnect message');

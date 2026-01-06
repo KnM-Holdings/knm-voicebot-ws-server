@@ -3,6 +3,7 @@ const express = require('express');
 const { createServer } = require('http');
 const { WebSocketServer } = require('ws');
 const { client } = require('./grpc-client');
+const { createWebRTCServer } = require('./webrtc-server');
 const crypto = require('crypto');
 const url = require('url');
 
@@ -77,12 +78,15 @@ server.on('upgrade', (request, socket, head) => {
     console.log('[Server] Query parameters:', query);
 
     // Path pattern: /live-call/websocket/{call_id}/{customer_phone_number}
-    const match = pathname.match(/^\/live-call\/websocket\/([^\/]+)\/([^\/]+)$/);
+    const wsMatch = pathname.match(/^\/live-call\/websocket\/([^\/]+)\/([^\/]+)$/);
+    // Path pattern: /live-call/webrtc/{call_id}/{customer_phone_number}
+    const webrtcMatch = pathname.match(/^\/live-call\/webrtc\/([^\/]+)\/([^\/]+)$/);
 
-    if (match) {
-        console.log('[Server] WebSocket upgrade matched. Call ID:', match[1], 'Customer Phone Number:', match[2]);
-        const callId = match[1];
-        const customerPhoneNumber = match[2];
+    if (wsMatch) {
+        // Handle WebSocket connection
+        console.log('[Server] WebSocket upgrade matched. Call ID:', wsMatch[1], 'Customer Phone Number:', wsMatch[2]);
+        const callId = wsMatch[1];
+        const customerPhoneNumber = wsMatch[2];
         const token = query.token;
 
         // Hardcoded token check
@@ -96,6 +100,11 @@ server.on('upgrade', (request, socket, head) => {
             socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
             socket.destroy();
         }
+    } else if (webrtcMatch) {
+        // WebRTC signaling handled by webrtc-server.js
+        // It will handle the upgrade in its own module
+        console.log('[Server] WebRTC path detected, delegating to WebRTC server');
+        // Don't handle here - let webrtc-server handle it
     } else {
         socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
         socket.destroy();
@@ -337,11 +346,15 @@ wss.on('connection', (ws, request) => {
 
 const PORT = process.env.PORT || 8080;
 
+// Initialize WebRTC server (runs on same HTTP server)
+createWebRTCServer(server);
+
 // Check gRPC connection before starting server
 checkGrpcConnection()
     .then(() => {
         server.listen(PORT, () => {
-            console.log(`[Server] WebSocket server running on ws://localhost:${PORT}`);
+            console.log(`[Server] WebSocket server running on ws://localhost:${PORT}/live-call/websocket/...`);
+            console.log(`[Server] WebRTC signaling server running on ws://localhost:${PORT}/live-call/webrtc/...`);
             console.log(`[Server] gRPC client connecting to: ${process.env.GRPC_SERVER}`);
         });
     })

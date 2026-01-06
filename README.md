@@ -1,12 +1,12 @@
-# KnM Voicebot WebSocket Server
+# KnM Voicebot WebSocket & WebRTC Server
 
 ## Giới thiệu / Introduction
 
-Dự án này là một WebSocket Gateway Server cho hệ thống Voicebot. Nó đóng vai trò là cầu nối giữa Client (Web/Mobile) và AI Service (gRPC).
-Server xử lý kết nối WebSocket từ client, xác thực, và chuyển tiếp dữ liệu âm thanh/tín hiệu tới AI Service thông qua gRPC stream hai chiều.
+Dự án này là một Gateway Server hỗ trợ cả WebSocket và WebRTC cho hệ thống Voicebot. Nó đóng vai trò là cầu nối giữa Client (Web/Mobile) và AI Service (gRPC).
+Server xử lý kết nối WebSocket/WebRTC từ client, xác thực, và chuyển tiếp dữ liệu âm thanh/tín hiệu tới AI Service thông qua gRPC stream hai chiều.
 
-This project is a WebSocket Gateway Server for the Voicebot system. It acts as a bridge between Clients (Web/Mobile) and the AI Service (gRPC).
-The server handles WebSocket connections, authentication, and forwards audio/signal data to the AI Service via a bidirectional gRPC stream.
+This project is a Gateway Server supporting both WebSocket and WebRTC for the Voicebot system. It acts as a bridge between Clients (Web/Mobile) and the AI Service (gRPC).
+The server handles WebSocket/WebRTC connections, authentication, and forwards audio/signal data to the AI Service via a bidirectional gRPC stream.
 
 ## Architecture
 
@@ -18,24 +18,39 @@ The system uses a Microservices architecture with Nginx as a Load Balancer.
 +--------+       +-------+       +------------------+       +--------------+
 |        |  WS   |       |  WS   |                  | gRPC  |              |
 | Client | <---> | Nginx | <---> | Node.js Server   | <---> |  AI Service  |
-|        |       |       |       | (Gateway)        |       |              |
+| (Web)  |       |       |       | (Gateway)        |       |              |
 +--------+       +-------+       +------------------+       +--------------+
     ^                ^                    ^                        ^
     |                |                    |                        |
-Web/Mobile      Load Balancer        Auth, Resampling,       Core Logic
-App             Sticky Session       Protocol Conversion     ASR/NLP/TTS
+WebSocket/       Load Balancer        Auth, Resampling,       Core Logic
+WebRTC Mode      Sticky Session       Protocol Conversion     ASR/NLP/TTS
 ```
 
 ### Components
 
-1.  **Client**: Ứng dụng phía người dùng (Web hoặc Mobile), gửi/nhận âm thanh qua WebSocket.
+1.  **Client**: Ứng dụng phía người dùng (Web), gửi/nhận âm thanh qua WebSocket hoặc WebRTC signaling.
 2.  **Nginx**: Reverse Proxy và Load Balancer. Sử dụng `ip_hash` để đảm bảo sticky session (một cuộc gọi luôn được xử lý bởi cùng một server instance).
 3.  **Node.js Server**:
-    - Endpoint WebSocket: `/live-call/websocket/{call_id}/{customer_phone_number}`
+    - WebSocket Endpoint: `/live-call/websocket/{call_id}/{customer_phone_number}`
+    - WebRTC Signaling Endpoint: `/live-call/webrtc/{call_id}/{customer_phone_number}`
     - Xác thực token.
-    - Chuyển đổi giao thức: WebSocket (JSON) <-> gRPC (Protobuf).
+    - Chuyển đổi giao thức: WebSocket/WebRTC (JSON) <-> gRPC (Protobuf).
     - Xử lý âm thanh: Resample âm thanh từ AI Service (24kHz) xuống 8kHz cho Client.
 4.  **AI Service**: Xử lý logic chính (Speech-to-Text, NLP, Text-to-Speech).
+
+## Connection Modes
+
+### WebSocket Mode (Legacy)
+
+- Traditional WebSocket connection
+- Direct proto message format
+- Backward compatible
+
+### WebRTC Mode (New)
+
+- WebRTC signaling over WebSocket
+- Event-based message format
+- Ready for future WebRTC media streams enhancement
 
 ## API Documentation
 
@@ -44,6 +59,14 @@ App             Sticky Session       Protocol Conversion     ASR/NLP/TTS
 ```
 ws://<host>/live-call/websocket/{call_id}/{customer_phone_number}?token={token}
 ```
+
+### WebRTC Signaling Endpoint
+
+```
+ws://<host>/live-call/webrtc/{call_id}/{customer_phone_number}?token={token}
+```
+
+**Parameters:**
 
 - `call_id`: ID duy nhất của cuộc gọi.
 - `customer_phone_number`: Số điện thoại khách hàng.
