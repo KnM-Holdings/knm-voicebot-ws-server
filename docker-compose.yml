@@ -26,21 +26,6 @@ services:
       - app-network
     # Note: ai-service is no longer included.
     # The server connects to external gRPC AI service at 192.168.1.36:50051
-  traefik:
-    image: traefik:latest
-    restart: unless-stopped
-    command:
-      - "--api.insecure=true"
-      - "--providers.file=true"
-      - "--providers.file.filename=/etc/traefik/traefik.yml"
-      - "--entrypoints.web.address=:80"
-    ports:
-      - "80:80"
-      - "9999:8080"
-    volumes:
-      - ./traefik.yml:/etc/traefik/traefik.yml:ro
-    networks:
-      - app-network
 
 networks:
   app-network:
