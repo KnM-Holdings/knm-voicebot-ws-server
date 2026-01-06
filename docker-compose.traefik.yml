@@ -14,7 +14,9 @@ services:
       - "9999:8080"
     volumes:
       - ./traefik.yml:/etc/traefik/traefik.yml:ro
+    networks:
+      - app-network
 
 networks:
-  web:
-    driver: bridge
+  app-network:
+    external: true
