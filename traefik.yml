@@ -1,0 +1,13 @@
+http:
+  routers:
+    app:
+      rule: Host(`voice-bot-ws.knmholdings.org`)
+      service: app
+      entryPoints:
+        - web
+
+  services:
+    app:
+      loadBalancer:
+        servers:
+          - url: http://host.docker.internal:8014
