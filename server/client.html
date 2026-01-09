@@ -73,85 +73,80 @@
                 try {
                     const data = JSON.parse(event.data);
                     
-                    // Handle different message types from WebRTC server
-                    switch(data.type) {
-                        case 'connected':
-                            console.log('✅ Connection acknowledged, ID:', data.connection_id);
-                            break;
-                            
-                        case 'ready':
-                            console.log('✅ Call initialized, Call ID:', data.call_id);
-                            document.getElementById('status').textContent = 'WebRTC Ready';
-                            break;
-                            
-                        case 'audio':
-                            // Handle audio from server (same as WebSocket mode)
-                            const base64Audio = data.audio_content;
-                            const binaryString = window.atob(base64Audio);
-                            const len = binaryString.length;
-                            const bytes = new Uint8Array(len);
-                            for (let i = 0; i < len; i++) {
-                                bytes[i] = binaryString.charCodeAt(i);
-                            }
-                            const audioData = bytes.buffer;
+                    // Handle WebRTC signaling messages (type-based)
+                    if (data.type === 'connected') {
+                        console.log('✅ Connection acknowledged, ID:', data.connection_id);
+                        return;
+                    }
+                    
+                    if (data.type === 'ready') {
+                        console.log('✅ Call initialized, Call ID:', data.call_id);
+                        document.getElementById('status').textContent = 'WebRTC Ready';
+                        return;
+                    }
+                    
+                    // Handle gRPC proto messages (same format as WebSocket)
+                    if (data.audio_output) {
+                        const base64Audio = data.audio_output.audio_content;
+                        const binaryString = window.atob(base64Audio);
+                        const len = binaryString.length;
+                        const bytes = new Uint8Array(len);
+                        for (let i = 0; i < len; i++) {
+                            bytes[i] = binaryString.charCodeAt(i);
+                        }
+                        const audioData = bytes.buffer;
 
-                            console.log('✅ Received audio chunk from server:', audioData.byteLength, 'bytes');
-                            
-                            if (!audioCtx) return;
+                        console.log('✅ Received audio chunk from server:', audioData.byteLength, 'bytes');
+                        
+                        if (!audioCtx) return;
 
-                            // Convert Int16 PCM to Float32
-                            const int16Data = new Int16Array(audioData);
-                            const float32Data = new Float32Array(int16Data.length);
-                            
-                            for (let i = 0; i < int16Data.length; i++) {
-                                float32Data[i] = int16Data[i] / 32768.0;
-                            }
+                        // Convert Int16 PCM to Float32
+                        const int16Data = new Int16Array(audioData);
+                        const float32Data = new Float32Array(int16Data.length);
+                        
+                        for (let i = 0; i < int16Data.length; i++) {
+                            float32Data[i] = int16Data[i] / 32768.0;
+                        }
 
-                            // Create AudioBuffer
-                            const audioBuffer = audioCtx.createBuffer(1, float32Data.length, PLAYBACK_SAMPLE_RATE);
-                            audioBuffer.getChannelData(0).set(float32Data);
+                        // Create AudioBuffer
+                        const audioBuffer = audioCtx.createBuffer(1, float32Data.length, PLAYBACK_SAMPLE_RATE);
+                        audioBuffer.getChannelData(0).set(float32Data);
 
-                            // Create Source
-                            const source = audioCtx.createBufferSource();
-                            source.buffer = audioBuffer;
-                            source.connect(audioCtx.destination);
+                        // Create Source
+                        const source = audioCtx.createBufferSource();
+                        source.buffer = audioBuffer;
+                        source.connect(audioCtx.destination);
 
-                            // Schedule playback
-                            const currentTime = audioCtx.currentTime;
-                            if (nextStartTime < currentTime) {
-                                nextStartTime = currentTime + 0.05;
-                            }
-                            
-                            source.start(nextStartTime);
-                            nextStartTime += audioBuffer.duration;
-                            break;
-                            
-                        case 'text':
-                            console.log('📝 Received text:', data.text);
-                            break;
-                            
-                        case 'end_call':
-                            console.log('📴 Call ended by server, Call ID:', data.call_id);
+                        // Schedule playback
+                        const currentTime = audioCtx.currentTime;
+                        if (nextStartTime < currentTime) {
+                            nextStartTime = currentTime + 0.05;
+                        }
+                        
+                        source.start(nextStartTime);
+                        nextStartTime += audioBuffer.duration;
+                    } else if (data.text_output) {
+                        console.log('📝 Received text:', data.text_output.text);
+                    } else if (data.signal) {
+                        console.log('ℹ️ Received signal:', data.signal);
+                        
+                        if (data.signal.end_call) {
+                            console.log('📴 Call ended by server, Call ID:', data.signal.end_call.call_id);
                             if (isRecording) {
                                 document.getElementById('stop').click();
                             }
-                            break;
-                            
-                        case 'transfer_call':
+                        } else if (data.signal.transfer_call) {
                             console.log('↪️  Call transfer signal received');
-                            alert('Call is being transferred to: ' + (data.staff_info?.map(s => s.name).join(', ') || 'available staff'));
-                            break;
-                            
-                        case 'kill_audio':
-                            console.log('🔇 Kill audio signal for Call ID:', data.call_id);
-                            break;
-                            
-                        case 'error':
-                            console.error('❌ Server error:', data.error);
-                            break;
-                            
-                        default:
-                            console.log('ℹ️ Unknown message type:', data.type);
+                            const transferInfo = data.signal.transfer_call;
+                            console.log('   Target staff:', transferInfo.target_staff);
+                            alert('Call is being transferred to: ' + (transferInfo.target_staff?.map(s => s.name).join(', ') || 'available staff'));
+                        } else if (data.signal.kill_audio) {
+                            console.log('🔇 Kill audio signal for Call ID:', data.signal.kill_audio.call_id);
+                        }
+                    } else if (data.error) {
+                        console.error('❌ Server error:', data.error);
+                    } else {
+                        console.log('ℹ️ Unknown message:', data);
                     }
                 } catch (err) {
                     console.error('Signaling message error:', err);
@@ -400,7 +395,7 @@
                 }
             };
 
-            // console.log('📤 Sending audio chunk:', int16Data.byteLength, 'bytes');
+            console.log('📤 Sending audio chunk:', int16Data.byteLength, 'bytes', 'mode:', mode);
             ws.send(JSON.stringify(message));
           }
         };

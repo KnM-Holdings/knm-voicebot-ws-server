@@ -101,8 +101,11 @@ function createWebRTCServer(httpServer) {
             console.error('[WebRTC-gRPC] Error details:', err.details);
             if (ws.readyState === 1) {
                 ws.send(JSON.stringify({
-                    type: 'error',
-                    error: err.message
+                    error: {
+                        message: err.message,
+                        code: err.code,
+                        details: err.details
+                    }
                 }));
                 ws.close(1011, `gRPC error: ${err.message}`);
             }
@@ -116,7 +119,6 @@ function createWebRTCServer(httpServer) {
                     console.error('[WebRTC-gRPC] Error:', serverResponse.error.message);
                     if (ws.readyState === 1) {
                         ws.send(JSON.stringify({
-                            type: 'error',
                             error: serverResponse.error
                         }));
 
@@ -144,8 +146,9 @@ function createWebRTCServer(httpServer) {
 
                     // Send audio via WebRTC data channel (mapped from proto)
                     ws.send(JSON.stringify({
-                        type: 'audio',
-                        audio_content: resampledAudio
+                        audio_output: {
+                            audio_content: resampledAudio
+                        }
                     }));
                 }
             } else if (serverResponse.text_output) {
@@ -153,8 +156,9 @@ function createWebRTCServer(httpServer) {
 
                 if (ws.readyState === 1) {
                     ws.send(JSON.stringify({
-                        type: 'text',
-                        text: textChunk.text
+                        text_output: {
+                            text: textChunk.text
+                        }
                     }));
                 }
             } else if (serverResponse.signal) {
@@ -164,25 +168,40 @@ function createWebRTCServer(httpServer) {
                     console.log('[WebRTC-gRPC] Received end_call signal for:', signal.end_call.call_id);
                     if (ws.readyState === 1) {
                         ws.send(JSON.stringify({
-                            type: 'end_call',
-                            call_id: signal.end_call.call_id
+                            signal: {
+                                end_call: {
+                                    call_id: signal.end_call.call_id
+                                }
+                            }
                         }));
-                        ws.close(1000, 'Call ended by server');
+                        setTimeout(() => {
+                            if (ws.readyState === 1) {
+                                ws.close(1000, 'Call ended by server');
+                            }
+                        }, 100);
                     }
                 } else if (signal.transfer_call) {
                     console.log('[WebRTC-gRPC] Received transfer_call signal');
                     if (ws.readyState === 1) {
                         ws.send(JSON.stringify({
-                            type: 'transfer_call',
-                            staff_info: signal.transfer_call.staff_info
+                            signal: {
+                                transfer_call: {
+                                    call_id: signal.transfer_call.call_id,
+                                    customer_phone_number: signal.transfer_call.customer_phone_number,
+                                    target_staff: signal.transfer_call.target_staff || []
+                                }
+                            }
                         }));
                     }
                 } else if (signal.kill_audio) {
                     console.log('[WebRTC-gRPC] Received kill_audio signal for:', signal.kill_audio.call_id);
                     if (ws.readyState === 1) {
                         ws.send(JSON.stringify({
-                            type: 'kill_audio',
-                            call_id: signal.kill_audio.call_id
+                            signal: {
+                                kill_audio: {
+                                    call_id: signal.kill_audio.call_id
+                                }
+                            }
                         }));
                     }
                 }
@@ -271,6 +290,7 @@ function createWebRTCServer(httpServer) {
                         }
                     };
 
+                    // console.log(`[WebRTC-gRPC] Sending audio chunk #${audioChunkCount}`);
                     stream.write(audioChunk);
                     break;
 
